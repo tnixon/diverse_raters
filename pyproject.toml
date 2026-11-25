@@ -1,0 +1,42 @@
+[project]
+name = "dre"
+version = "0.1.0"
+description = "Does a diverse, randomly sampled rater ensemble reduce reward hacking versus a single rater?"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+dependencies = [
+    "mlflow",
+    "databricks-sdk",
+    "pyyaml",
+    "pydantic",
+]
+
+[dependency-groups]
+dev = [
+    "ruff",
+    "pytest",
+]
+
+[build-system]
+requires = ["uv_build>=0.8,<0.14"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "dre"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+# Databricks notebooks use injected globals (spark, dbutils) and late imports.
+"notebooks/*" = ["F821", "E402"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
