@@ -19,6 +19,14 @@ Rules that follow from this:
 - If the plan needs to change during execution, stop and discuss it instead of widening scope on your own.
 - Design is shared: raise concerns, alternatives, and uncertainties rather than silently picking one. The director decides.
 
+## Sandbox and permissions
+The agent runs in a sandbox. Its tools and actions are limited by design, so a blocked action or a rejected tool call is intentional, not a fault to route around.
+
+- Do not look for a work-around or spend time trying to circumvent a restriction. That includes reaching the same result through a different tool, command, or path.
+- If something can't be done, say what you were trying to do and why, then stop and ask.
+- The director will respond in one of three ways: do it themselves, change the settings so the agent can do it in future, or grant a limited one-time permission.
+- Always come back with a request for access or for a specific action to be performed. Never find another route to do it yourself.
+
 ## Commands
 - Install: `uv sync`
 - Lint: `uv run ruff check .`
