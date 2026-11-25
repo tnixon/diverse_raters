@@ -3,6 +3,22 @@
 ## Purpose
 This repo tests one claim: at matched rater accuracy, optimizing against a diverse, randomly sampled ensemble of raters produces less reward hacking than optimizing against a single rater. The construct is toxicity, framed as detoxification, and a hack is a rewrite the training signal scores as clean when it is not. The work is built in four reviewed stages: skeleton, data, raters, search and evaluation.
 
+## Roles and workflow
+The human is the **director**; the agent is the **actor**. The agent codes, the director reviews, and the two design together.
+
+1. **Direction:** the director says what we want to build.
+2. **Plan:** the agent proposes how to build it. We may iterate on the plan several times.
+3. **Approval:** the director approves the plan. Do not write code before this.
+4. **Execution:** the agent implements the approved plan and produces candidate code, running lint and tests as it goes.
+5. **Review:** the director reviews all changes. Leave them uncommitted in the working tree until this is done.
+6. **Go-ahead:** only when the director says so may the agent commit, push, and open a PR. The PR then gets further review and automated checks.
+
+Rules that follow from this:
+- Never commit unreviewed code. Report what changed and wait.
+- Never push a branch or open a PR until directed to. A go-ahead to commit is not a go-ahead to push, and approval for one step does not carry over to the next.
+- If the plan needs to change during execution, stop and discuss it instead of widening scope on your own.
+- Design is shared: raise concerns, alternatives, and uncertainties rather than silently picking one. The director decides.
+
 ## Commands
 - Install: `uv sync`
 - Lint: `uv run ruff check .`
