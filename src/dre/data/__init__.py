@@ -2,6 +2,9 @@
 
 from dataclasses import dataclass
 
+# Value of the `source` column in the split tables. A later source adds rows under a new value.
+SOURCE_JIGSAW = "jigsaw"
+
 # Bronze tables, parsed from the downloaded files (schema: raw).
 JIGSAW_COMMENTS = "jigsaw_comments"
 JIGSAW_ANNOTATIONS = "jigsaw_annotations"
@@ -15,6 +18,7 @@ ANNOTATOR_SPLITS = "annotator_splits"
 JIGSAW_TRAIN = "jigsaw_train"
 JIGSAW_VALIDATION = "jigsaw_validation"
 JIGSAW_SEARCH = "jigsaw_search"
+JIGSAW_SEARCH_SOURCES = "jigsaw_search_sources"
 JIGSAW_HELDOUT_ANNOTATORS = "jigsaw_heldout_annotators"
 
 

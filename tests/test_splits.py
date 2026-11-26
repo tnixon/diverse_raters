@@ -1,6 +1,12 @@
 import pytest
 
-from dre.data.splits import assign_split, hash_unit, is_heldout_annotator
+from dre.data.splits import (
+    assign_split,
+    hash_unit,
+    is_heldout_annotator,
+    normalize_text,
+    text_key,
+)
 
 FRACTIONS = {"train": 0.8, "validation": 0.1, "search": 0.1}
 IDS = [str(i) for i in range(100_000)]
@@ -39,3 +45,18 @@ def test_assignment_follows_fraction_order():
 def test_heldout_annotator_fraction_is_respected():
     heldout = sum(is_heldout_annotator(key, "salt", 0.1) for key in IDS)
     assert heldout / len(IDS) == pytest.approx(0.1, abs=0.01)
+
+
+def test_normalize_text_folds_case_whitespace_and_unicode():
+    assert normalize_text("  Hello \n  WORLD\t") == "hello world"
+    assert normalize_text("ＦＵＬＬ width") == "full width"
+
+
+def test_identical_texts_share_a_key_and_therefore_a_split():
+    variants = ["You are   right.", "you are right.\n", "YOU ARE RIGHT."]
+    assert len({text_key(text) for text in variants}) == 1
+    assert len({assign_split(text_key(text), "salt", FRACTIONS) for text in variants}) == 1
+
+
+def test_different_texts_get_different_keys():
+    assert text_key("one") != text_key("two")

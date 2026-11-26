@@ -8,7 +8,20 @@ import zipfile
 from collections.abc import Callable
 from pathlib import Path
 
+from dre.data.config import DataConfig
+from dre.settings import Settings
+
 _CHUNK_BYTES = 1024 * 1024
+
+
+def volume_files(settings: Settings, config: DataConfig) -> dict[str, Path]:
+    """Where each downloaded file lives in the volume, keyed by a short name."""
+    volume = Path(settings.volume_path)
+    return {
+        "jigsaw_comments": volume / "jigsaw" / config.kaggle.comments_file,
+        "jigsaw_annotations": volume / "jigsaw" / config.kaggle.annotations_file,
+        "mhs": volume / "mhs" / config.huggingface.filename,
+    }
 
 
 def sha256_file(path: Path) -> str:
