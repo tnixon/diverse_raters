@@ -8,9 +8,20 @@ sets stay held out when the data is rebuilt.
 from __future__ import annotations
 
 import hashlib
+import unicodedata
 from collections.abc import Mapping
 
 _UINT64_RANGE = 2**64
+
+
+def normalize_text(text: str) -> str:
+    """Canonical form for exact-duplicate detection: Unicode-folded, lower-cased, one-spaced."""
+    return " ".join(unicodedata.normalize("NFKC", text).casefold().split())
+
+
+def text_key(text: str) -> str:
+    """Stable key shared by every comment whose normalized text is identical."""
+    return hashlib.sha256(normalize_text(text).encode()).hexdigest()
 
 
 def hash_unit(key: str, salt: str) -> float:

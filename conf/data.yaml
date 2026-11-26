@@ -2,14 +2,28 @@
 # comments and annotators are held out, so treat edits as a new data version.
 seed: 20261125
 
-# Comment-level splits, assigned by stable hash of the comment id. Order matters.
+# Comment-level splits. Comments are keyed by the hash of their normalized text, so every id
+# sharing a text lands in the same split. Order matters.
 comment_splits:
   train: 0.8
   validation: 0.1
   search: 0.1
 
-# Share of annotators (by worker id) whose labels are held out as a trusted-score source.
-heldout_annotator_fraction: 0.1
+# Held-out annotators (chosen by hash of worker id) never contribute labels to train, validation
+# or search. Their labels train a held-out rater model, which scores rewrites as one of the
+# trusted sources, so they need enough labels to train a competent rater.
+# Both stay null until the data_profile run (notebooks/01_ingest.py) has been reviewed.
+heldout_annotator_fraction: null
+min_heldout_annotations: null
+# Fractions the profile reports label and worker shares for.
+candidate_heldout_fractions: [0.05, 0.1, 0.15, 0.2]
+
+# Source comments for the search stage, drawn from the search split using training-annotator
+# labels only. Spread across clusters is deferred until clusters exist (stage 3).
+search_sources:
+  count: 200
+  toxicity_threshold: 0.5
+  min_annotators: 3
 
 kaggle:
   competition: jigsaw-unintended-bias-in-toxicity-classification
@@ -22,4 +36,4 @@ kaggle:
 huggingface:
   repo_id: ucberkeley-dlab/measuring-hate-speech
   filename: measuring-hate-speech.parquet
-  revision: REPLACE_WITH_PINNED_COMMIT_SHA
+  revision: 5468f6e118396646b02a2f691e771f6b6d9502ea

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 import mlflow
@@ -11,6 +10,7 @@ import mlflow.data
 from dre.data import (
     JIGSAW_HELDOUT_ANNOTATORS,
     JIGSAW_SEARCH,
+    JIGSAW_SEARCH_SOURCES,
     JIGSAW_TRAIN,
     JIGSAW_VALIDATION,
     MHS_ANNOTATIONS,
@@ -44,9 +44,15 @@ def registered_datasets(settings: Settings) -> tuple[RegisteredDataset, ...]:
         ),
         RegisteredDataset(
             curated,
+            JIGSAW_SEARCH_SOURCES,
+            "search_sources",
+            "Source comments for the search stage, chosen from the search split",
+        ),
+        RegisteredDataset(
+            curated,
             JIGSAW_HELDOUT_ANNOTATORS,
             "heldout_annotators",
-            "Trusted score: all labels from held-out annotators",
+            "Trains the held-out rater model, a trusted scorer of rewrites; held-out labels only",
         ),
         RegisteredDataset(
             raw, MHS_ANNOTATIONS, "cross_dataset_eval", "Measuring Hate Speech, evaluation only"
@@ -76,11 +82,7 @@ def require_git_commit(run_id: str) -> str:
     commit = mlflow.get_run(run_id).data.tags.get(GIT_COMMIT_TAG)
     if not commit:
         raise RuntimeError(
-            f"run {run_id} has no {GIT_COMMIT_TAG} tag; run the notebook from a Databricks Git folder"
+            f"run {run_id} has no {GIT_COMMIT_TAG} tag; "
+            "run the notebook from a Databricks Git folder"
         )
     return commit
-
-
-def log_file_checksums(checksums: Mapping[str, str]) -> None:
-    for name, digest in checksums.items():
-        mlflow.log_param(f"sha256.{name}", digest)
