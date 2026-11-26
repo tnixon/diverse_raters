@@ -12,6 +12,7 @@ def test_default_names():
     assert s.volume_path == "/Volumes/diverse_raters/raw/downloads"
     assert s.experiment == "/Shared/diverse-raters"
     assert s.schema_fqn("results") == "diverse_raters.results"
+    assert s.table_fqn("curated", "jigsaw_train") == "diverse_raters.curated.jigsaw_train"
     assert s.model_name("smoke_test") == "diverse_raters.models.smoke_test"
 
 

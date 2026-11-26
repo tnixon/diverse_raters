@@ -1,0 +1,25 @@
+# Up-front splits and data sources for stage 2. Changing any split value changes which
+# comments and annotators are held out, so treat edits as a new data version.
+seed: 20261125
+
+# Comment-level splits, assigned by stable hash of the comment id. Order matters.
+comment_splits:
+  train: 0.8
+  validation: 0.1
+  search: 0.1
+
+# Share of annotators (by worker id) whose labels are held out as a trusted-score source.
+heldout_annotator_fraction: 0.1
+
+kaggle:
+  competition: jigsaw-unintended-bias-in-toxicity-classification
+  comments_file: all_data.csv
+  annotations_file: toxicity_individual_annotations.csv
+  secret_scope: kaggle
+  username_key: username
+  api_key_key: key
+
+huggingface:
+  repo_id: ucberkeley-dlab/measuring-hate-speech
+  filename: measuring-hate-speech.parquet
+  revision: REPLACE_WITH_PINNED_COMMIT_SHA

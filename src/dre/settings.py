@@ -64,6 +64,9 @@ class Settings(BaseModel):
     def schema_fqn(self, schema: str) -> str:
         return f"{self.catalog}.{schema}"
 
+    def table_fqn(self, schema: str, table: str) -> str:
+        return f"{self.schema_fqn(schema)}.{table}"
+
     @property
     def volume_fqn(self) -> str:
         return f"{self.catalog}.{self.schemas.raw}.{self.volume}"

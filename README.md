@@ -38,7 +38,7 @@ Predictions are committed to [PREDICTIONS.md](PREDICTIONS.md) before any ensembl
 
 ## Status
 
-Work in progress, in a project sprint ending mid-December 2026. The work is built in four reviewed stages: (1) skeleton and workspace wiring, (2) data, (3) raters, (4) search and evaluation. Only stage 1 exists so far, so there is no data, training, search, or evaluation code yet.
+Work in progress, in a project sprint ending mid-December 2026. The work is built in four reviewed stages: (1) skeleton and workspace wiring, (2) data, (3) raters, (4) search and evaluation. Stages 1 and 2 exist so far (stage 2 is awaiting review), so there is no rater training, search, or evaluation code yet.
 
 ## Setup
 
@@ -64,8 +64,15 @@ Then run `notebooks/00_setup.py` in the workspace (for example from a Git folder
 
 Data is never committed. It is downloaded into the `diverse_raters.raw.downloads` volume.
 
-- **Jigsaw Civil Comments, individual annotations:** Kaggle. You must accept the competition rules with your Kaggle account before downloading.
-- **Measuring Hate Speech:** used only for the cross-dataset check.
+- **Jigsaw Civil Comments, individual annotations:** Kaggle. You must accept the competition rules with your Kaggle account before downloading, and store your Kaggle username and key in the Databricks secret scope named in `conf/data.yaml` (default scope `kaggle`, keys `username` and `key`).
+- **Measuring Hate Speech:** used only for the cross-dataset check. Downloaded from Hugging Face at the revision pinned in `conf/data.yaml`.
+
+`notebooks/01_data.py` downloads both into the volume, parses them into Delta tables in `raw`, and carves out the up-front splits before anything else touches the data:
+
+- Comments are assigned to `train` / `validation` / `search` by a stable hash of the comment id.
+- Annotators are assigned to held-out or training by a stable hash of the worker id. Held-out annotators' labels go only to `curated.jigsaw_heldout_annotators`, on every comment split.
+
+Each curated table, plus Measuring Hate Speech, is logged as an MLflow dataset pinned to its Delta version in a `data_prep` run.
 
 ## Layout
 
