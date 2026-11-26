@@ -16,8 +16,7 @@ class KaggleConfig(BaseModel):
     comments_file: str
     annotations_file: str
     secret_scope: str
-    username_key: str
-    api_key_key: str
+    token_key: str
 
 
 class HuggingFaceConfig(BaseModel):

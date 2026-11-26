@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import zipfile
 from collections.abc import Callable
 from pathlib import Path
 
@@ -43,23 +42,13 @@ def fetch_if_missing(destination: Path, fetch: Callable[[Path], None]) -> Path:
     return destination
 
 
-def download_kaggle_file(
-    competition: str, file_name: str, directory: Path, username: str, api_key: str
-) -> Path:
+def download_kaggle_file(competition: str, file_name: str, directory: Path, api_token: str) -> Path:
     def fetch(destination: Path) -> None:
-        # The kaggle package authenticates on import, so credentials must be set first.
-        os.environ["KAGGLE_USERNAME"] = username
-        os.environ["KAGGLE_KEY"] = api_key
-        from kaggle.api.kaggle_api_extended import KaggleApi
+        # kagglehub has no token argument; this env var is its non-interactive way in.
+        os.environ["KAGGLE_API_TOKEN"] = api_token
+        import kagglehub
 
-        api = KaggleApi()
-        api.authenticate()
-        api.competition_download_file(competition, file_name, path=str(directory))
-        archive = directory / f"{file_name}.zip"
-        if archive.exists():
-            with zipfile.ZipFile(archive) as zipped:
-                zipped.extract(file_name, directory)
-            archive.unlink()
+        kagglehub.competition_download(competition, path=file_name, output_dir=str(directory))
 
     return fetch_if_missing(directory / file_name, fetch)
 

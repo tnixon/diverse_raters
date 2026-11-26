@@ -30,8 +30,7 @@ kaggle:
   comments_file: all_data.csv
   annotations_file: toxicity_individual_annotations.csv
   secret_scope: kaggle
-  username_key: username
-  api_key_key: key
+  token_key: api_token
 
 huggingface:
   repo_id: ucberkeley-dlab/measuring-hate-speech

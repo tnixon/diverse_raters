@@ -7,13 +7,13 @@
 # MAGIC `heldout_annotator_fraction` and `min_heldout_annotations` in `conf/data.yaml` before
 # MAGIC running `02_splits`.
 # MAGIC
-# MAGIC Prerequisites: accept the Kaggle competition rules, and store the Kaggle username and key
-# MAGIC in the secret scope named in `conf/data.yaml`. Safe to rerun: downloads are skipped when
+# MAGIC Prerequisites: accept the Kaggle competition rules, and store the Kaggle API token in the
+# MAGIC secret scope named in `conf/data.yaml`. Safe to rerun: downloads are skipped when
 # MAGIC present.
 
 # COMMAND ----------
 
-# MAGIC %pip install kaggle huggingface_hub pyyaml
+# MAGIC %pip install kagglehub huggingface_hub pyyaml
 
 # COMMAND ----------
 
@@ -43,11 +43,10 @@ from dre.data.download import (
 )
 
 files = volume_files(settings, config)
-kaggle_user = dbutils.secrets.get(config.kaggle.secret_scope, config.kaggle.username_key)
-kaggle_key = dbutils.secrets.get(config.kaggle.secret_scope, config.kaggle.api_key_key)
+kaggle_token = dbutils.secrets.get(config.kaggle.secret_scope, config.kaggle.token_key)
 
 for file in (files["jigsaw_comments"], files["jigsaw_annotations"]):
-    download_kaggle_file(config.kaggle.competition, file.name, file.parent, kaggle_user, kaggle_key)
+    download_kaggle_file(config.kaggle.competition, file.name, file.parent, kaggle_token)
 download_huggingface_file(
     config.huggingface.repo_id,
     config.huggingface.filename,

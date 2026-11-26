@@ -64,7 +64,7 @@ Then run `notebooks/00_setup.py` in the workspace (for example from a Git folder
 
 Data is never committed. It is downloaded into the `diverse_raters.raw.downloads` volume.
 
-- **Jigsaw Civil Comments, individual annotations:** Kaggle. You must accept the competition rules with your Kaggle account before downloading, and store your Kaggle username and key in the Databricks secret scope named in `conf/data.yaml` (default scope `kaggle`, keys `username` and `key`).
+- **Jigsaw Civil Comments, individual annotations:** Kaggle. You must accept the competition rules with your Kaggle account before downloading, and store a Kaggle API token (from kaggle.com/settings/api) in the Databricks secret scope named in `conf/data.yaml` (default scope `kaggle`, key `api_token`).
 - **Measuring Hate Speech:** used only for the cross-dataset check. Downloaded from Hugging Face at the revision pinned in `conf/data.yaml`.
 
 Two notebooks, run in order, carve out the up-front splits before anything else touches the data.
