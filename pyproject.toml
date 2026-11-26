@@ -10,7 +10,7 @@ dependencies = [
     "databricks-sdk",
     "pyyaml",
     "pydantic",
-    "kaggle",
+    "kagglehub",
     "huggingface_hub",
 ]
 
