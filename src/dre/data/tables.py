@@ -5,7 +5,7 @@ Split logic itself lives in ``splits.py`` and is applied here to distinct keys o
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -32,6 +32,7 @@ from dre.data import (
 from dre.data.config import DataConfig
 from dre.data.profile import require_enough_heldout_labels
 from dre.data.splits import assign_split, hash_unit, is_heldout_annotator, text_key
+from dre.reload import BuildResult, should_build
 from dre.settings import Settings
 
 if TYPE_CHECKING:
@@ -60,8 +61,18 @@ SPLIT_TABLES = {
 FORBIDDEN_PRECOMPUTED_COLUMNS = {"toxicity", "toxicity_fraction"}
 
 
-def _overwrite(frame: DataFrame, table_name: str) -> None:
-    frame.write.mode("overwrite").option("overwriteSchema", True).saveAsTable(table_name)
+def _write_table(
+    spark: SparkSession, name: str, build: Callable[[], DataFrame], reload: bool
+) -> BuildResult:
+    """Write the table if it is missing, or if ``reload`` asks for a rebuild.
+
+    ``build`` runs only when the table is written and must validate before returning, because a
+    table that exists is assumed to be complete and is skipped on later runs.
+    """
+    built = should_build(spark.catalog.tableExists(name), reload)
+    if built:
+        build().write.mode("overwrite").option("overwriteSchema", True).saveAsTable(name)
+    return BuildResult(rows=spark.table(name).count(), built=built)
 
 
 def _map_udf(function: Callable, return_type: DataType):
@@ -86,37 +97,48 @@ def _read_csv_columns(spark: SparkSession, path: Path, columns: dict[str, str]) 
     return raw.select(*(F.col(name).cast(dtype).alias(name) for name, dtype in columns.items()))
 
 
-def _require_no_nulls(frame: DataFrame, column: str, table: str) -> None:
-    if frame.filter(F.col(column).isNull()).limit(1).count():
-        raise ValueError(f"{table}.{column} contains nulls")
+def _validated(frame: DataFrame, table: str, non_null: Sequence[str] = ()) -> DataFrame:
+    """Return ``frame`` unchanged, or raise if it is empty or has nulls in ``non_null`` columns."""
+    for column in non_null:
+        if frame.filter(F.col(column).isNull()).limit(1).count():
+            raise ValueError(f"{table}.{column} contains nulls")
+    if frame.limit(1).count() == 0:
+        raise ValueError(f"{table} would be empty")
+    return frame
 
 
 def write_bronze_tables(
-    spark: SparkSession, settings: Settings, files: Mapping[str, Path]
-) -> dict[str, int]:
-    """Parse the downloaded files into raw Delta tables. Returns row counts by table name."""
-    sources = {
+    spark: SparkSession, settings: Settings, files: Mapping[str, Path], reload: bool
+) -> dict[str, BuildResult]:
+    """Parse the downloaded files into raw Delta tables, building only what is missing."""
+
+    def jigsaw_comments() -> DataFrame:
         # all_data.csv contains one comment with empty text (id 392337) and no annotations;
         # drop it instead of failing ingestion.
-        JIGSAW_COMMENTS: _read_csv_columns(
-            spark, files["jigsaw_comments"], COMMENT_COLUMNS
-        ).filter(F.col("comment_text").isNotNull()),
+        frame = _read_csv_columns(spark, files["jigsaw_comments"], COMMENT_COLUMNS).filter(
+            F.col("comment_text").isNotNull()
+        )
+        return _validated(frame, JIGSAW_COMMENTS, non_null=["comment_text"])
+
+    def jigsaw_annotations() -> DataFrame:
         # The Jigsaw CSV names the annotator column "worker"; the tables use "worker_id".
-        JIGSAW_ANNOTATIONS: _read_csv_columns(
+        frame = _read_csv_columns(
             spark, files["jigsaw_annotations"], ANNOTATION_COLUMNS
-        ).withColumnRenamed("worker", "worker_id"),
-        MHS_ANNOTATIONS: spark.read.parquet(str(files["mhs"])),
+        ).withColumnRenamed("worker", "worker_id")
+        return _validated(frame, JIGSAW_ANNOTATIONS, non_null=["worker_id"])
+
+    def mhs_annotations() -> DataFrame:
+        return _validated(spark.read.parquet(str(files["mhs"])), MHS_ANNOTATIONS)
+
+    builders = {
+        JIGSAW_COMMENTS: jigsaw_comments,
+        JIGSAW_ANNOTATIONS: jigsaw_annotations,
+        MHS_ANNOTATIONS: mhs_annotations,
     }
-    _require_no_nulls(sources[JIGSAW_COMMENTS], "comment_text", JIGSAW_COMMENTS)
-    _require_no_nulls(sources[JIGSAW_ANNOTATIONS], "worker_id", JIGSAW_ANNOTATIONS)
-    counts = {}
-    for table, frame in sources.items():
-        name = settings.table_fqn(settings.schemas.raw, table)
-        _overwrite(frame, name)
-        counts[table] = spark.table(name).count()
-        if counts[table] == 0:
-            raise ValueError(f"{name} is empty after parsing")
-    return counts
+    return {
+        table: _write_table(spark, settings.table_fqn(settings.schemas.raw, table), build, reload)
+        for table, build in builders.items()
+    }
 
 
 def _keyed_comments(spark: SparkSession, settings: Settings) -> DataFrame:
@@ -146,41 +168,53 @@ def profile_inputs(spark: SparkSession, settings: Settings) -> tuple[pd.Series, 
     return labels_per_worker, texts_by_id_count
 
 
-def write_split_tables(spark: SparkSession, settings: Settings, config: DataConfig) -> None:
+def write_split_tables(
+    spark: SparkSession, settings: Settings, config: DataConfig, reload: bool
+) -> dict[str, BuildResult]:
     """Assign every comment text to a split and every annotator to held-out or not."""
+    # Checked even when the tables exist, so an unset rule fails before anything is skipped.
     fraction, minimum_labels = config.require_heldout_rule()
     curated = settings.schemas.curated
     raw = settings.schemas.raw
 
-    keyed = _keyed_comments(spark, settings)
-    split_of = _map_udf(
-        partial(assign_split, salt=config.comment_salt, fractions=config.comment_splits),
-        StringType(),
-    )
-    assignments = keyed.select("text_key").distinct().withColumn("split", split_of("text_key"))
-    comment_splits = (
-        keyed.select("id", "text_key")
-        .join(assignments, "text_key")
-        .select(F.lit(SOURCE_JIGSAW).alias("source"), "id", "text_key", "split")
-    )
+    def comment_splits() -> DataFrame:
+        keyed = _keyed_comments(spark, settings)
+        split_of = _map_udf(
+            partial(assign_split, salt=config.comment_salt, fractions=config.comment_splits),
+            StringType(),
+        )
+        assignments = keyed.select("text_key").distinct().withColumn("split", split_of("text_key"))
+        return (
+            keyed.select("id", "text_key")
+            .join(assignments, "text_key")
+            .select(F.lit(SOURCE_JIGSAW).alias("source"), "id", "text_key", "split")
+        )
 
-    annotations = spark.table(settings.table_fqn(raw, JIGSAW_ANNOTATIONS))
-    heldout_of = _map_udf(
-        partial(is_heldout_annotator, salt=config.annotator_salt, fraction=fraction),
-        BooleanType(),
-    )
-    workers = (
-        annotations.select("worker_id").distinct().withColumn("heldout", heldout_of("worker_id"))
-    )
-    heldout_labels = annotations.join(workers.filter("heldout"), "worker_id").count()
-    require_enough_heldout_labels(heldout_labels, minimum_labels)
-    annotator_splits = workers.select(F.lit(SOURCE_JIGSAW).alias("source"), "worker_id", "heldout")
+    def annotator_splits() -> DataFrame:
+        annotations = spark.table(settings.table_fqn(raw, JIGSAW_ANNOTATIONS))
+        heldout_of = _map_udf(
+            partial(is_heldout_annotator, salt=config.annotator_salt, fraction=fraction),
+            BooleanType(),
+        )
+        workers = (
+            annotations.select("worker_id")
+            .distinct()
+            .withColumn("heldout", heldout_of("worker_id"))
+        )
+        heldout_labels = annotations.join(workers.filter("heldout"), "worker_id").count()
+        require_enough_heldout_labels(heldout_labels, minimum_labels)
+        return workers.select(F.lit(SOURCE_JIGSAW).alias("source"), "worker_id", "heldout")
 
-    _overwrite(comment_splits, settings.table_fqn(curated, COMMENT_SPLITS))
-    _overwrite(annotator_splits, settings.table_fqn(curated, ANNOTATOR_SPLITS))
+    builders = {COMMENT_SPLITS: comment_splits, ANNOTATOR_SPLITS: annotator_splits}
+    return {
+        table: _write_table(spark, settings.table_fqn(curated, table), build, reload)
+        for table, build in builders.items()
+    }
 
 
-def write_curated_tables(spark: SparkSession, settings: Settings) -> dict[str, int]:
+def write_curated_tables(
+    spark: SparkSession, settings: Settings, reload: bool
+) -> dict[str, BuildResult]:
     """Join text, labels and split assignments into one table per dataset.
 
     Held-out annotators' labels go only to the held-out table, on every comment split. The
@@ -217,15 +251,17 @@ def write_curated_tables(spark: SparkSession, settings: Settings) -> dict[str, i
     }
     outputs[JIGSAW_HELDOUT_ANNOTATORS] = with_aggregates(labelled.filter(F.col("heldout")))
 
-    counts = {}
-    for table, frame in outputs.items():
-        name = settings.table_fqn(curated, table)
-        _overwrite(frame, name)
-        counts[table] = spark.table(name).count()
-    return counts
+    return {
+        table: _write_table(
+            spark, settings.table_fqn(curated, table), partial(_validated, frame, table), reload
+        )
+        for table, frame in outputs.items()
+    }
 
 
-def write_search_sources(spark: SparkSession, settings: Settings, config: DataConfig) -> int:
+def write_search_sources(
+    spark: SparkSession, settings: Settings, config: DataConfig, reload: bool
+) -> BuildResult:
     """Choose the comments the search stage rewrites, from the search split only.
 
     Eligibility uses training-annotator labels (the search table holds no other). Selection is a
@@ -233,31 +269,35 @@ def write_search_sources(spark: SparkSession, settings: Settings, config: DataCo
     """
     curated = settings.schemas.curated
     rule = config.search_sources
-    eligible = (
-        spark.table(settings.table_fqn(curated, JIGSAW_SEARCH))
-        .select("id", "text_key", "comment_text", "toxicity_mean", "annotator_count")
-        .distinct()
-        .filter(
-            (F.col("annotator_count") >= rule.min_annotators)
-            & (F.col("toxicity_mean") >= rule.toxicity_threshold)
+
+    def chosen_sources() -> DataFrame:
+        eligible = (
+            spark.table(settings.table_fqn(curated, JIGSAW_SEARCH))
+            .select("id", "text_key", "comment_text", "toxicity_mean", "annotator_count")
+            .distinct()
+            .filter(
+                (F.col("annotator_count") >= rule.min_annotators)
+                & (F.col("toxicity_mean") >= rule.toxicity_threshold)
+            )
         )
-    )
-    one_id_per_text = eligible.groupBy("text_key").agg(F.min("id").alias("id"))
-    hash_order = _map_udf(partial(hash_unit, salt=config.search_sources_salt), DoubleType())
-    chosen = (
-        eligible.join(one_id_per_text, ["text_key", "id"])
-        .withColumn("selection_hash", hash_order("text_key"))
-        .orderBy("selection_hash", "text_key")
-        .limit(rule.count)
-    )
+        one_id_per_text = eligible.groupBy("text_key").agg(F.min("id").alias("id"))
+        hash_order = _map_udf(partial(hash_unit, salt=config.search_sources_salt), DoubleType())
+        chosen = (
+            eligible.join(one_id_per_text, ["text_key", "id"])
+            .withColumn("selection_hash", hash_order("text_key"))
+            .orderBy("selection_hash", "text_key")
+            .limit(rule.count)
+        )
+        chosen_count = chosen.count()
+        if chosen_count < rule.count:
+            raise ValueError(
+                f"only {chosen_count} eligible search comments, fewer than the {rule.count} "
+                "required"
+            )
+        return chosen
+
     name = settings.table_fqn(curated, JIGSAW_SEARCH_SOURCES)
-    _overwrite(chosen, name)
-    chosen_count = spark.table(name).count()
-    if chosen_count < rule.count:
-        raise ValueError(
-            f"only {chosen_count} eligible search comments, fewer than the {rule.count} required"
-        )
-    return chosen_count
+    return _write_table(spark, name, chosen_sources, reload)
 
 
 def check_no_leakage(spark: SparkSession, settings: Settings) -> None:

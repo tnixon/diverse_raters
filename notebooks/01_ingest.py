@@ -18,8 +18,12 @@
 # MAGIC running `02_splits`.
 # MAGIC
 # MAGIC Prerequisites: accept the Kaggle competition rules, and store the Kaggle API token in the
-# MAGIC secret scope named in `conf/data.yaml`. Safe to rerun: downloads are skipped when
-# MAGIC present.
+# MAGIC secret scope named in `conf/data.yaml`.
+# MAGIC
+# MAGIC Safe to rerun after a failure. A file or table that already exists is kept, and only
+# MAGIC missing ones are built. Set the `reload` widget to `true` to download and rebuild
+# MAGIC everything: do this after changing the source files or their pinned revisions. If you
+# MAGIC reload here, rerun `02_splits` with `reload` too, because its tables are built from these.
 
 # COMMAND ----------
 
@@ -43,6 +47,9 @@ config_path = Path(os.getcwd()).parent / "conf" / "data.yaml"
 config = load_data_config(config_path)
 configure_mlflow(settings)
 
+dbutils.widgets.dropdown("reload", "false", ["false", "true"], "Re-download and rebuild existing")
+reload = dbutils.widgets.get("reload") == "true"
+
 # COMMAND ----------
 
 from dre.data.download import (
@@ -55,26 +62,25 @@ from dre.data.download import (
 files = volume_files(settings, config)
 kaggle_token = dbutils.secrets.get(config.kaggle.secret_scope, config.kaggle.token_key)
 
-for file in (files["jigsaw_comments"], files["jigsaw_annotations"]):
-    if file.exists():
-        continue
-    download_kaggle_file(config.kaggle.competition, file.name, file.parent, kaggle_token)
-if not files["mhs"].exists():
-    download_huggingface_file(
-        config.huggingface.repo_id,
-        config.huggingface.filename,
-        config.huggingface.revision,
-        files["mhs"].parent,
-    )
+downloaded = {
+    name: download_kaggle_file(config.kaggle.competition, files[name], kaggle_token, reload)
+    for name in ("jigsaw_comments", "jigsaw_annotations")
+}
+downloaded["mhs"] = download_huggingface_file(
+    config.huggingface.repo_id, config.huggingface.revision, files["mhs"], reload
+)
+print({name: "downloaded" if fetched else "kept" for name, fetched in downloaded.items()})
 checksums = {name: sha256_file(path) for name, path in files.items()}
 print(checksums)
 
 # COMMAND ----------
 
 from dre.data.tables import profile_inputs, write_bronze_tables
+from dre.reload import describe_results, row_counts
 
-bronze_counts = write_bronze_tables(spark, settings, files)
-print(bronze_counts)
+bronze_results = write_bronze_tables(spark, settings, files, reload)
+print(describe_results(bronze_results))
+bronze_counts = row_counts(bronze_results)
 labels_per_worker, texts_by_id_count = profile_inputs(spark, settings)
 
 # COMMAND ----------
@@ -93,7 +99,9 @@ profile = {
 }
 
 with mlflow.start_run(run_name="data_profile") as run:
-    mlflow.log_params({"seed": config.seed, "mhs_revision": config.huggingface.revision})
+    mlflow.log_params(
+        {"seed": config.seed, "mhs_revision": config.huggingface.revision, "reload": reload}
+    )
     mlflow.log_params({f"sha256.{name}": digest for name, digest in checksums.items()})
     mlflow.log_dict(profile, "profile.json")
 
