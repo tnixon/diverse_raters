@@ -28,11 +28,19 @@ def test_bad_split_fractions_are_rejected(fractions):
         DataConfig.model_validate({**shipped_values(), "comment_splits": fractions})
 
 
-def test_heldout_rule_is_unset_until_the_profile_is_read():
+def test_shipped_config_sets_the_heldout_rule():
     config = load_data_config(SHIPPED_CONFIG)
-    assert config.heldout_annotator_fraction is None
+    assert config.require_heldout_rule() == (0.1, 500_000)
+
+
+def test_heldout_rule_fails_fast_when_unset():
+    values = {
+        **shipped_values(),
+        "heldout_annotator_fraction": None,
+        "min_heldout_annotations": None,
+    }
     with pytest.raises(ValueError, match="data_profile"):
-        config.require_heldout_rule()
+        DataConfig.model_validate(values).require_heldout_rule()
 
 
 def test_heldout_rule_is_returned_once_set():

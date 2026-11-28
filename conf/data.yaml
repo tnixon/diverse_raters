@@ -12,9 +12,11 @@ comment_splits:
 # Held-out annotators (chosen by hash of worker id) never contribute labels to train, validation
 # or search. Their labels train a held-out rater model, which scores rewrites as one of the
 # trusted sources, so they need enough labels to train a competent rater.
-# Both stay null until the data_profile run (notebooks/01_ingest.py) has been reviewed.
-heldout_annotator_fraction: null
-min_heldout_annotations: null
+# Set from the data_profile run (notebooks/01_ingest.py): 0.1 holds out about 880 of 8,899
+# workers and 1.67M of 15.9M labels. The minimum is a floor well below that, so it only fails
+# if the fraction is later shrunk below about 0.03. Both are null until a profile is reviewed.
+heldout_annotator_fraction: 0.1
+min_heldout_annotations: 500000
 # Fractions the profile reports label and worker shares for.
 candidate_heldout_fractions: [0.05, 0.1, 0.15, 0.2]
 
