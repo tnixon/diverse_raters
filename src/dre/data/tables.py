@@ -42,7 +42,7 @@ if TYPE_CHECKING:
 COMMENT_COLUMNS = {"id": "long", "comment_text": "string"}
 ANNOTATION_COLUMNS = {
     "id": "long",
-    "worker_id": "string",
+    "worker": "string",
     "toxic": "int",
     "severe_toxic": "int",
     "obscene": "int",
@@ -96,10 +96,15 @@ def write_bronze_tables(
 ) -> dict[str, int]:
     """Parse the downloaded files into raw Delta tables. Returns row counts by table name."""
     sources = {
-        JIGSAW_COMMENTS: _read_csv_columns(spark, files["jigsaw_comments"], COMMENT_COLUMNS),
+        # all_data.csv contains one comment with empty text (id 392337) and no annotations;
+        # drop it instead of failing ingestion.
+        JIGSAW_COMMENTS: _read_csv_columns(
+            spark, files["jigsaw_comments"], COMMENT_COLUMNS
+        ).filter(F.col("comment_text").isNotNull()),
+        # The Jigsaw CSV names the annotator column "worker"; the tables use "worker_id".
         JIGSAW_ANNOTATIONS: _read_csv_columns(
             spark, files["jigsaw_annotations"], ANNOTATION_COLUMNS
-        ),
+        ).withColumnRenamed("worker", "worker_id"),
         MHS_ANNOTATIONS: spark.read.parquet(str(files["mhs"])),
     }
     _require_no_nulls(sources[JIGSAW_COMMENTS], "comment_text", JIGSAW_COMMENTS)
