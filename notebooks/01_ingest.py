@@ -1,4 +1,14 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "6"
+# dependencies = [
+#   "kaggle",
+#   "huggingface_hub",
+#   "pyyaml",
+#   "kagglehub",
+# ]
+# ///
 # MAGIC %md
 # MAGIC # 01 Ingest and profile
 # MAGIC Downloads Jigsaw Civil Comments (individual annotations) and Measuring Hate Speech into the
@@ -46,13 +56,16 @@ files = volume_files(settings, config)
 kaggle_token = dbutils.secrets.get(config.kaggle.secret_scope, config.kaggle.token_key)
 
 for file in (files["jigsaw_comments"], files["jigsaw_annotations"]):
+    if file.exists():
+        continue
     download_kaggle_file(config.kaggle.competition, file.name, file.parent, kaggle_token)
-download_huggingface_file(
-    config.huggingface.repo_id,
-    config.huggingface.filename,
-    config.huggingface.revision,
-    files["mhs"].parent,
-)
+if not files["mhs"].exists():
+    download_huggingface_file(
+        config.huggingface.repo_id,
+        config.huggingface.filename,
+        config.huggingface.revision,
+        files["mhs"].parent,
+    )
 checksums = {name: sha256_file(path) for name, path in files.items()}
 print(checksums)
 
