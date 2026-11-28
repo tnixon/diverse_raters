@@ -48,6 +48,7 @@ The agent runs in a sandbox. Its tools and actions are limited by design, so a b
 - Seeds are fixed.
 - One stage or plan step per PR.
 - No paid API calls in tests.
+- Reruns must be cheap and safe. Every download from an external source and every full table build first checks whether its target exists. If it is missing, create it. If it is present, skip it unless the run's `reload` control is true; then delete or overwrite it and rebuild. A target that exists must be complete: stage downloads and move them into place, and validate before writing a table. `reload` is a notebook widget (or job parameter), passed into library code as an explicit `reload: bool`.
 
 ## Clean code
 This project follows clean-code principles. Apply them to every change, every time. They are not optional and not something to tidy up later. If a principle conflicts with a task, say so and ask rather than quietly dropping it.

@@ -11,7 +11,10 @@
 # MAGIC - Label aggregates are rebuilt from individual annotations in each table; the Kaggle
 # MAGIC   all-annotator `toxicity` score is never used.
 # MAGIC
-# MAGIC Deterministic and safe to rerun: tables are overwritten with identical content.
+# MAGIC Safe to rerun after a failure. A table that already exists is kept, and only missing ones
+# MAGIC are built. Set the `reload` widget to `true` to rebuild every table: do this after changing
+# MAGIC `conf/data.yaml` or after rerunning `01_ingest` with new inputs, because existing tables are
+# MAGIC not checked against the current config or inputs.
 
 # COMMAND ----------
 
@@ -31,20 +34,26 @@ config_path = Path(os.getcwd()).parent / "conf" / "data.yaml"
 config = load_data_config(config_path)
 configure_mlflow(settings)
 
+dbutils.widgets.dropdown("reload", "false", ["false", "true"], "Rebuild existing tables")
+reload = dbutils.widgets.get("reload") == "true"
+
 # COMMAND ----------
 
+from dre.data import JIGSAW_SEARCH_SOURCES
 from dre.data.tables import (
     check_no_leakage,
     write_curated_tables,
     write_search_sources,
     write_split_tables,
 )
+from dre.reload import describe_results, row_counts
 
-write_split_tables(spark, settings, config)  # fails fast if the held-out rule is unset or too small
-curated_counts = write_curated_tables(spark, settings)
-curated_counts["jigsaw_search_sources"] = write_search_sources(spark, settings, config)
+# Fails fast if the held-out rule is unset, or too small to train a rater.
+split_results = write_split_tables(spark, settings, config, reload)
+curated_results = write_curated_tables(spark, settings, reload)
+curated_results[JIGSAW_SEARCH_SOURCES] = write_search_sources(spark, settings, config, reload)
 check_no_leakage(spark, settings)
-print(curated_counts)
+print(describe_results({**split_results, **curated_results}))
 
 # COMMAND ----------
 
@@ -64,12 +73,15 @@ with mlflow.start_run(run_name="data_prep") as run:
             "min_heldout_annotations": minimum_labels,
             "search_sources": config.search_sources.model_dump(),
             "mhs_revision": config.huggingface.revision,
+            "reload": reload,
         }
     )
     files = volume_files(settings, config)
     mlflow.log_params({f"sha256.{name}": sha256_file(path) for name, path in files.items()})
     mlflow.log_artifact(str(config_path))
-    mlflow.log_metrics({f"rows.{table}": count for table, count in curated_counts.items()})
+    mlflow.log_metrics(
+        {f"rows.{table}": rows for table, rows in row_counts(curated_results).items()}
+    )
     log_datasets(spark, settings)
 
 print("git commit:", require_git_commit(run.info.run_id))

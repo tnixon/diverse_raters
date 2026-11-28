@@ -73,6 +73,8 @@ Two notebooks, run in order, carve out the up-front splits before anything else 
 2. Read that profile, then set `heldout_annotator_fraction` and `min_heldout_annotations` in `conf/data.yaml` (they ship as `null`, and the next notebook refuses to run without them). Labels per worker are heavily skewed, so a fixed 10% of workers could be a small or a large share of the labels.
 3. `notebooks/02_splits.py` builds the splits and curated tables and logs a `data_prep` run.
 
+Both notebooks have a `reload` widget (default `false`). With it off, a downloaded file or table that already exists is kept and only missing ones are built, so a rerun after a failed cell is cheap and cannot duplicate rows. Set it to `true` to rebuild everything, which you must do after changing `conf/data.yaml` or the source files, since existing outputs are not checked against the current config.
+
 How the splits work:
 
 - **Comments** go to `train` / `validation` / `search` by a stable hash of their *normalized text*, not their id, so identical text under different ids always lands in the same split. Near-duplicates are not caught.
